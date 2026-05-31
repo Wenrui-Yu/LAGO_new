@@ -1,0 +1,25 @@
+{
+  "graph_name": "syntactic",
+  "threshold": 0.45,
+  "language_codes": [
+    "en",
+    "fr",
+    "de",
+    "it",
+    "pt",
+    "es",
+    "nl"
+  ],
+  "language_names": [
+    "English",
+    "French",
+    "German",
+    "Italian",
+    "Portuguese",
+    "Spanish",
+    "Dutch"
+  ],
+  "edge_count": 7,
+  "sign_mode": "legacy",
+  "source": "../lang2vec-master"
+}

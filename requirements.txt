@@ -1,0 +1,12 @@
+transformers
+torch
+datasets
+numpy
+pandas
+tqdm
+sentencepiece
+protobuf
+rouge-score
+evaluate
+sacrebleu
+openai

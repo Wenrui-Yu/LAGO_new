@@ -1,0 +1,25 @@
+{
+  "graph_name": "ajsp",
+  "threshold": 90.0,
+  "language_codes": [
+    "en",
+    "fr",
+    "de",
+    "it",
+    "pt",
+    "es",
+    "nl"
+  ],
+  "language_names": [
+    "English",
+    "French",
+    "German",
+    "Italian",
+    "Portuguese",
+    "Spanish",
+    "Dutch"
+  ],
+  "edge_count": 12,
+  "sign_mode": "legacy",
+  "source": "resources/asjp/output.txt"
+}
