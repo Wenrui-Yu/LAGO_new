@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import os
+import re
 from typing import Dict, List, Tuple
 
 import numpy as np
@@ -11,7 +12,7 @@ from tqdm import tqdm
 
 from data import sample_splits
 from decoder_model import AttackDecoderModel
-from graph_alignment import build_graph, infer_lang_key, lago_pdmm, ridge_alignment
+from graph_alignment import build_graph, graph_stats, infer_lang_key, lago_pdmm, ridge_alignment
 from metrics import eval_embeddings, generation_metrics
 from utils import (
     check_normalization,
@@ -275,9 +276,23 @@ def output_dir(args, decoder: AttackDecoderModel) -> str:
         args.output_dir,
         decoder_slug,
         source_slug,
-        f"{args.graph_type}_{args.constraint_mode}_train{args.align_train_samples}"
+        f"{args.graph_label}_{args.constraint_mode}_train{args.align_train_samples}"
         f"_ridge{args.reg_lambda}_eps{args.epsilon}_seed{args.seed}",
     )
+
+
+def infer_graph_label(graph_type: str, graph_file: str | None) -> str:
+    if graph_type == "none":
+        return "none"
+    if not graph_file:
+        return graph_type
+
+    stem = os.path.splitext(os.path.basename(graph_file))[0]
+    stem = re.sub(r"^graph_", "", stem)
+    stem = re.sub(r"_signed$", "", stem)
+    if graph_type.startswith("random") and not stem.startswith("random"):
+        return f"{graph_type}_from_{stem}"
+    return stem
 
 
 def write_prediction_csv(path: str, predictions: List[str], references: List[str]) -> None:
@@ -292,6 +307,8 @@ def run(args) -> None:
     set_seed(args.seed)
     device = get_device()
     decoder = load_decoder(args.decoder_checkpoint_path, device)
+    if args.graph_label is None:
+        args.graph_label = infer_graph_label(args.graph_type, args.graph_file)
 
     if args.lang_keys is None:
         args.lang_keys = [infer_lang_key(dataset_name) for dataset_name in args.datasets]
@@ -321,7 +338,8 @@ def run(args) -> None:
 
     graph = build_graph(args.graph_type, args.lang_keys, args.graph_file, args.seed)
     if graph is not None:
-        print(f"Graph type={args.graph_type}\n{graph}")
+        print(f"Graph type={args.graph_type}, graph_label={args.graph_label}\n{graph}")
+        print(f"Graph stats={graph_stats(graph)}")
 
     xs = [item["x_train"] for item in lang_items]
     ys = [item["y_train"] for item in lang_items]
@@ -360,6 +378,7 @@ def run(args) -> None:
         "macro": macro_average(per_lang_metrics),
         "per_lang": per_lang_metrics,
         "graph": None if graph is None else graph.cpu().tolist(),
+        "graph_stats": graph_stats(graph),
     }
     save_json(os.path.join(out_dir, "results.json"), summary)
     print(summary["macro"])
@@ -406,6 +425,11 @@ def parse_args():
         default="totalvariation",
     )
     parser.add_argument("--graph_file", default=None)
+    parser.add_argument(
+        "--graph_label",
+        default=None,
+        help="Unique label used in output folder names when --graph_file varies topology.",
+    )
     parser.add_argument("--align_train_samples", type=int, default=100)
     parser.add_argument("--val_samples", type=int, default=200)
     parser.add_argument("--test_samples", type=int, default=200)

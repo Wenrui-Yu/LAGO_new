@@ -84,12 +84,25 @@ ajsp threshold 90 from ASJP62 LDND distances
 legacy ALGEN/LAGO signed-edge convention
 ```
 
+The same command also writes top-k graph variants for the connectivity
+ablation:
+
+```text
+lang2vec_topk3, lang2vec_topk6, ..., lang2vec_topk18
+ajsp_topk3, ajsp_topk6, ..., ajsp_topk18
+```
+
+Each top-k graph keeps the k shortest language-distance edges, so the
+experiment can separate "does this topology help?" from "does any graph with
+this density help?". The generator writes `connectivity_summary.csv` with edge
+counts, density, degree range, and connected components.
+
 To run an ablation with an explicitly generated graph file:
 
 ```bash
 GRAPH_TYPES=lang2vec sbatch run_lago_ablation.sh
 # or directly:
-python src/run_alignment_ablation.py ... --graph_type lang2vec --graph_file graphs/mmarco_7/graph_lang2vec_0.45_signed.json
+python src/run_alignment_ablation.py ... --graph_type lang2vec --graph_file graphs/mmarco_7/graph_lang2vec_0.45_signed.json --graph_label lang2vec_0.45
 ```
 
 For a strictly antisymmetric signed graph instead of the legacy ALGEN/LAGO
@@ -146,6 +159,46 @@ For the multilingual fine-tuned decoder, run:
 sbatch run_lago_multilingual_decoder_ablation.sh
 ```
 
+To test graph connectivity instead of a single fixed topology:
+
+```bash
+sbatch run_generate_language_graphs.sh
+sbatch run_lago_connectivity_ablation.sh
+```
+
+This runs:
+
+```text
+no graph
+real lang2vec top-k graphs
+random graphs with the same number of edges as each lang2vec top-k graph
+real AJSP top-k graphs
+random graphs with the same number of edges as each AJSP top-k graph
+```
+
+The default output is separate from the fixed-graph ablation:
+
+```text
+outputs/lago_ablation_connectivity/google_mt5-small/google_mt5-base/<graph_label>_<constraint>_train.../
+```
+
+For a smaller connectivity smoke test:
+
+```bash
+ALIGN_TRAIN_SAMPLES=100 \
+GRAPH_FILES="graphs/mmarco_7/graph_lang2vec_topk6_signed.json graphs/mmarco_7/graph_ajsp_topk6_signed.json" \
+sbatch run_lago_connectivity_ablation.sh
+```
+
+For the multilingual decoder, reuse the same script with the multilingual
+checkpoint and a different output directory:
+
+```bash
+DECODER_CHECKPOINT_PATH=outputs/decoders/google_mt5-small/yywwrr_mmarco_english_yywwrr_mmarco_french_yywwrr_mmarco_german_yywwrr_mmarco_italian_yywwrr_mmarco_portuguese_yywwrr_mmarco_spanish_yywwrr_mmarco_dutch_maxlength32_train450000_batch128_lr0.0001_wd0.0001_epochs100 \
+OUTPUT_DIR=outputs/lago_ablation_multilingual_decoder_connectivity \
+sbatch run_lago_connectivity_ablation.sh
+```
+
 ## Outputs
 
 Decoder checkpoints:
@@ -158,6 +211,7 @@ Alignment results:
 
 ```text
 outputs/lago_ablation/google_mt5-small/google_mt5-base/<graph>_<constraint>_train.../
+outputs/lago_ablation_connectivity/google_mt5-small/google_mt5-base/<graph_label>_<constraint>_train.../
 ```
 
 Each alignment folder contains:
@@ -178,3 +232,6 @@ Each alignment folder contains:
   parsing `resources/asjp/output.txt`, the ASJP62 LDND output.
 - `random_lang2vec` and `random_ajsp` use the same number of edges as the
   corresponding real graph but rewire them randomly.
+- Connectivity ablations should use `--graph_label` or
+  `run_lago_connectivity_ablation.sh`; otherwise different `--graph_file`
+  values with the same `graph_type` can be hard to distinguish.

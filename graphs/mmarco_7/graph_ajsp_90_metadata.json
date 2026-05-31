@@ -1,6 +1,8 @@
 {
   "graph_name": "ajsp",
-  "threshold": 90.0,
+  "selection_type": "threshold",
+  "selection_value": 90.0,
+  "label": "90",
   "language_codes": [
     "en",
     "fr",
@@ -19,7 +21,34 @@
     "Spanish",
     "Dutch"
   ],
-  "edge_count": 12,
   "sign_mode": "legacy",
-  "source": "resources/asjp/output.txt"
+  "source": "resources/asjp/output.txt",
+  "threshold": 90.0,
+  "edge_count": 12,
+  "density": 0.5714285714285714,
+  "degrees": {
+    "en": 3,
+    "fr": 3,
+    "de": 3,
+    "it": 6,
+    "pt": 3,
+    "es": 3,
+    "nl": 3
+  },
+  "degree_min": 3,
+  "degree_max": 6,
+  "degree_mean": 3.4285714285714284,
+  "num_components": 1,
+  "is_connected": true,
+  "components": [
+    [
+      "en",
+      "fr",
+      "de",
+      "it",
+      "pt",
+      "es",
+      "nl"
+    ]
+  ]
 }

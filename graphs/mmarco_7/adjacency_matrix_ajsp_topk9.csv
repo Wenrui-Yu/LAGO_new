@@ -1,0 +1,8 @@
+,English,French,German,Italian,Portuguese,Spanish,Dutch
+English,0,0,1,0,0,0,1
+French,0,0,0,1,1,1,0
+German,1,0,0,0,0,0,1
+Italian,0,1,0,0,1,1,0
+Portuguese,0,1,0,1,0,1,0
+Spanish,0,1,0,1,1,0,0
+Dutch,1,0,1,0,0,0,0

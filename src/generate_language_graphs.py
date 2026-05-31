@@ -7,7 +7,7 @@ import os
 import re
 import sys
 import warnings
-from typing import Dict, Iterable, List, Sequence
+from typing import Any, Dict, Iterable, List, Sequence
 
 import numpy as np
 
@@ -95,6 +95,10 @@ def parse_csv(value: str) -> List[str]:
 
 def parse_float_csv(value: str) -> List[float]:
     return [float(item) for item in parse_csv(value)]
+
+
+def parse_int_csv(value: str) -> List[int]:
+    return [int(item) for item in parse_csv(value)]
 
 
 def parse_langs(value: str) -> List[str]:
@@ -238,6 +242,23 @@ def adjacency_from_distances(matrix: np.ndarray, threshold: float) -> np.ndarray
     return ((matrix < threshold) & (matrix > 0)).astype(np.int64)
 
 
+def adjacency_from_top_k(matrix: np.ndarray, top_k: int) -> np.ndarray:
+    if top_k < 0:
+        raise ValueError(f"top_k must be non-negative, got {top_k}")
+    pairs = []
+    for i in range(matrix.shape[0]):
+        for j in range(i + 1, matrix.shape[1]):
+            value = float(matrix[i, j])
+            if value > 0:
+                pairs.append((value, i, j))
+    pairs.sort(key=lambda item: (item[0], item[1], item[2]))
+    adjacency = np.zeros(matrix.shape, dtype=np.int64)
+    for _, i, j in pairs[: min(top_k, len(pairs))]:
+        adjacency[i, j] = 1
+        adjacency[j, i] = 1
+    return adjacency
+
+
 def signed_from_adjacency(
     adjacency: np.ndarray,
     graph_name: str,
@@ -264,6 +285,45 @@ def edge_count(adjacency: np.ndarray) -> int:
     return int(np.triu(adjacency, k=1).sum())
 
 
+def connected_components(adjacency: np.ndarray) -> List[List[int]]:
+    visited = set()
+    components = []
+    for start in range(adjacency.shape[0]):
+        if start in visited:
+            continue
+        stack = [start]
+        visited.add(start)
+        component = []
+        while stack:
+            node = stack.pop()
+            component.append(node)
+            neighbors = np.where(adjacency[node] > 0)[0].tolist()
+            for neighbor in neighbors:
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    stack.append(neighbor)
+        components.append(sorted(component))
+    return components
+
+
+def graph_statistics(adjacency: np.ndarray, languages: Sequence[str]) -> Dict[str, Any]:
+    possible_edges = adjacency.shape[0] * (adjacency.shape[0] - 1) / 2
+    edges = edge_count(adjacency)
+    degrees = adjacency.sum(axis=1).astype(int).tolist()
+    components_idx = connected_components(adjacency)
+    return {
+        "edge_count": edges,
+        "density": 0.0 if possible_edges == 0 else edges / possible_edges,
+        "degrees": {lang: int(degree) for lang, degree in zip(languages, degrees)},
+        "degree_min": int(min(degrees)) if degrees else 0,
+        "degree_max": int(max(degrees)) if degrees else 0,
+        "degree_mean": float(np.mean(degrees)) if degrees else 0.0,
+        "num_components": len(components_idx),
+        "is_connected": len(components_idx) == 1,
+        "components": [[languages[idx] for idx in component] for component in components_idx],
+    }
+
+
 def write_csv(path: str, matrix: np.ndarray, languages: Sequence[str]) -> None:
     names = [LANGUAGE_NAMES[lang] for lang in languages]
     with open(path, "w", newline="") as f:
@@ -282,7 +342,9 @@ def write_json(path: str, matrix: np.ndarray) -> None:
 def write_metadata(
     path: str,
     graph_name: str,
-    threshold: float,
+    selection_type: str,
+    selection_value: float | int,
+    label: str,
     languages: Sequence[str],
     sign_mode: str,
     source: str,
@@ -290,13 +352,19 @@ def write_metadata(
 ) -> None:
     metadata = {
         "graph_name": graph_name,
-        "threshold": threshold,
+        "selection_type": selection_type,
+        "selection_value": selection_value,
+        "label": label,
         "language_codes": list(languages),
         "language_names": [LANGUAGE_NAMES[lang] for lang in languages],
-        "edge_count": edge_count(adjacency),
         "sign_mode": sign_mode,
         "source": source,
     }
+    if selection_type == "threshold":
+        metadata["threshold"] = selection_value
+    elif selection_type == "top_k":
+        metadata["top_k"] = selection_value
+    metadata.update(graph_statistics(adjacency, languages))
     with open(path, "w") as f:
         json.dump(metadata, f, indent=2)
         f.write("\n")
@@ -306,7 +374,66 @@ def threshold_label(threshold: float) -> str:
     return str(int(threshold)) if float(threshold).is_integer() else str(threshold).rstrip("0").rstrip(".")
 
 
-def generate_graph(
+def top_k_label(top_k: int) -> str:
+    return f"topk{top_k}"
+
+
+def write_graph_bundle(
+    output_dir: str,
+    graph_name: str,
+    adjacency: np.ndarray,
+    label: str,
+    selection_type: str,
+    selection_value: float | int,
+    languages: Sequence[str],
+    sign_mode: str,
+    source: str,
+    aliases: Iterable[str] = (),
+) -> List[Dict[str, Any]]:
+    signed = signed_from_adjacency(adjacency, graph_name, languages, sign_mode)
+    names = [graph_name, *aliases]
+    rows = []
+
+    for name in names:
+        adjacency_path = os.path.join(output_dir, f"adjacency_matrix_{name}_{label}.csv")
+        graph_path = os.path.join(output_dir, f"graph_{name}_{label}_signed.json")
+        metadata_path = os.path.join(output_dir, f"graph_{name}_{label}_metadata.json")
+        write_csv(adjacency_path, adjacency, languages)
+        write_json(graph_path, signed)
+        write_metadata(
+            metadata_path,
+            name,
+            selection_type,
+            selection_value,
+            label,
+            languages,
+            sign_mode,
+            source,
+            adjacency,
+        )
+        stats = graph_statistics(adjacency, languages)
+        rows.append(
+            {
+                "graph_name": name,
+                "selection_type": selection_type,
+                "selection_value": selection_value,
+                "label": label,
+                "graph_file": graph_path,
+                "adjacency_file": adjacency_path,
+                "metadata_file": metadata_path,
+                "source": source,
+                **stats,
+            }
+        )
+
+    print(
+        f"{graph_name}@{label}: languages={','.join(languages)}, "
+        f"edges={edge_count(adjacency)}, sign_mode={sign_mode}"
+    )
+    return rows
+
+
+def generate_threshold_graph(
     output_dir: str,
     graph_name: str,
     distance_matrix: np.ndarray,
@@ -315,30 +442,76 @@ def generate_graph(
     sign_mode: str,
     source: str,
     aliases: Iterable[str] = (),
-) -> None:
+) -> List[Dict[str, Any]]:
     distances = subset(distance_matrix, languages)
     adjacency = adjacency_from_distances(distances, threshold)
-    signed = signed_from_adjacency(adjacency, graph_name, languages, sign_mode)
-    label = threshold_label(threshold)
-    names = [graph_name, *aliases]
-
-    for name in names:
-        write_csv(os.path.join(output_dir, f"adjacency_matrix_{name}_{label}.csv"), adjacency, languages)
-        write_json(os.path.join(output_dir, f"graph_{name}_{label}_signed.json"), signed)
-        write_metadata(
-            os.path.join(output_dir, f"graph_{name}_{label}_metadata.json"),
-            name,
-            threshold,
-            languages,
-            sign_mode,
-            source,
-            adjacency,
-        )
-
-    print(
-        f"{graph_name}@{label}: languages={','.join(languages)}, "
-        f"edges={edge_count(adjacency)}, sign_mode={sign_mode}"
+    return write_graph_bundle(
+        output_dir,
+        graph_name,
+        adjacency,
+        threshold_label(threshold),
+        "threshold",
+        threshold,
+        languages,
+        sign_mode,
+        source,
+        aliases=aliases,
     )
+
+
+def generate_top_k_graph(
+    output_dir: str,
+    graph_name: str,
+    distance_matrix: np.ndarray,
+    top_k: int,
+    languages: Sequence[str],
+    sign_mode: str,
+    source: str,
+    aliases: Iterable[str] = (),
+) -> List[Dict[str, Any]]:
+    distances = subset(distance_matrix, languages)
+    adjacency = adjacency_from_top_k(distances, top_k)
+    return write_graph_bundle(
+        output_dir,
+        graph_name,
+        adjacency,
+        top_k_label(top_k),
+        "top_k",
+        top_k,
+        languages,
+        sign_mode,
+        source,
+        aliases=aliases,
+    )
+
+
+def write_connectivity_summary(output_dir: str, rows: List[Dict[str, Any]]) -> None:
+    if not rows:
+        return
+    path = os.path.join(output_dir, "connectivity_summary.csv")
+    fieldnames = [
+        "graph_name",
+        "selection_type",
+        "selection_value",
+        "label",
+        "edge_count",
+        "density",
+        "num_components",
+        "is_connected",
+        "degree_min",
+        "degree_max",
+        "degree_mean",
+        "graph_file",
+        "adjacency_file",
+        "metadata_file",
+        "source",
+    ]
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({field: row.get(field) for field in fieldnames})
+    print(f"Wrote connectivity summary to {path}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -347,6 +520,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--languages", type=parse_langs, default=MMARCO_7_LANGS)
     parser.add_argument("--syntactic_thresholds", type=parse_float_csv, default=[0.45])
     parser.add_argument("--ajsp_thresholds", type=parse_float_csv, default=[90.0])
+    parser.add_argument("--syntactic_topk", type=parse_int_csv, default=[3, 6, 9, 12, 15, 18])
+    parser.add_argument("--ajsp_topk", type=parse_int_csv, default=[3, 6, 9, 12, 15, 18])
     parser.add_argument(
         "--lang2vec_package_dir",
         default=DEFAULT_LANG2VEC_PACKAGE_DIR,
@@ -379,33 +554,65 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
+    summary_rows: List[Dict[str, Any]] = []
     syntactic_matrix, syntactic_source = load_lang2vec_syntactic_matrix(
         args.lang2vec_package_dir,
         args.lang2vec_distance_path,
     )
     for threshold in args.syntactic_thresholds:
         aliases = [] if args.skip_aliases else ["lang2vec"]
-        generate_graph(
-            args.output_dir,
-            "syntactic",
-            syntactic_matrix,
-            threshold,
-            args.languages,
-            args.sign_mode,
-            syntactic_source,
-            aliases=aliases,
+        summary_rows.extend(
+            generate_threshold_graph(
+                args.output_dir,
+                "syntactic",
+                syntactic_matrix,
+                threshold,
+                args.languages,
+                args.sign_mode,
+                syntactic_source,
+                aliases=aliases,
+            )
+        )
+    for top_k in args.syntactic_topk:
+        aliases = [] if args.skip_aliases else ["lang2vec"]
+        summary_rows.extend(
+            generate_top_k_graph(
+                args.output_dir,
+                "syntactic",
+                syntactic_matrix,
+                top_k,
+                args.languages,
+                args.sign_mode,
+                syntactic_source,
+                aliases=aliases,
+            )
         )
     ajsp_matrix = load_asjp_ldnd_matrix(args.asjp_output_path)
     for threshold in args.ajsp_thresholds:
-        generate_graph(
-            args.output_dir,
-            "ajsp",
-            ajsp_matrix,
-            threshold,
-            args.languages,
-            args.sign_mode,
-            args.asjp_output_path,
+        summary_rows.extend(
+            generate_threshold_graph(
+                args.output_dir,
+                "ajsp",
+                ajsp_matrix,
+                threshold,
+                args.languages,
+                args.sign_mode,
+                args.asjp_output_path,
+            )
         )
+    for top_k in args.ajsp_topk:
+        summary_rows.extend(
+            generate_top_k_graph(
+                args.output_dir,
+                "ajsp",
+                ajsp_matrix,
+                top_k,
+                args.languages,
+                args.sign_mode,
+                args.asjp_output_path,
+            )
+        )
+    write_connectivity_summary(args.output_dir, summary_rows)
 
 
 if __name__ == "__main__":

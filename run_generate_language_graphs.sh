@@ -17,6 +17,8 @@ OUTPUT_DIR="${OUTPUT_DIR:-graphs/mmarco_7}"
 LANGUAGES="${LANGUAGES:-en,fr,de,it,pt,es,nl}"
 SYNTACTIC_THRESHOLDS="${SYNTACTIC_THRESHOLDS:-0.45}"
 AJSP_THRESHOLDS="${AJSP_THRESHOLDS:-90}"
+SYNTACTIC_TOPK="${SYNTACTIC_TOPK:-3,6,9,12,15,18}"
+AJSP_TOPK="${AJSP_TOPK:-3,6,9,12,15,18}"
 SIGN_MODE="${SIGN_MODE:-legacy}"
 ASJP_OUTPUT_PATH="${ASJP_OUTPUT_PATH:-resources/asjp/output.txt}"
 LANG2VEC_PACKAGE_DIR="${LANG2VEC_PACKAGE_DIR:-../lang2vec-master}"
@@ -27,6 +29,8 @@ echo "output_dir=${OUTPUT_DIR}"
 echo "languages=${LANGUAGES}"
 echo "syntactic_thresholds=${SYNTACTIC_THRESHOLDS}"
 echo "ajsp_thresholds=${AJSP_THRESHOLDS}"
+echo "syntactic_topk=${SYNTACTIC_TOPK}"
+echo "ajsp_topk=${AJSP_TOPK}"
 echo "sign_mode=${SIGN_MODE}"
 echo "asjp_output_path=${ASJP_OUTPUT_PATH}"
 echo "lang2vec_package_dir=${LANG2VEC_PACKAGE_DIR}"
@@ -38,6 +42,8 @@ if command -v singularity >/dev/null 2>&1 && [ -f "${SINGULARITY_IMAGE}" ]; then
     --languages "${LANGUAGES}" \
     --syntactic_thresholds "${SYNTACTIC_THRESHOLDS}" \
     --ajsp_thresholds "${AJSP_THRESHOLDS}" \
+    --syntactic_topk "${SYNTACTIC_TOPK}" \
+    --ajsp_topk "${AJSP_TOPK}" \
     --lang2vec_package_dir "${LANG2VEC_PACKAGE_DIR}" \
     --lang2vec_distance_path "${LANG2VEC_DISTANCE_PATH}" \
     --asjp_output_path "${ASJP_OUTPUT_PATH}" \
@@ -48,6 +54,8 @@ else
     --languages "${LANGUAGES}" \
     --syntactic_thresholds "${SYNTACTIC_THRESHOLDS}" \
     --ajsp_thresholds "${AJSP_THRESHOLDS}" \
+    --syntactic_topk "${SYNTACTIC_TOPK}" \
+    --ajsp_topk "${AJSP_TOPK}" \
     --lang2vec_package_dir "${LANG2VEC_PACKAGE_DIR}" \
     --lang2vec_distance_path "${LANG2VEC_DISTANCE_PATH}" \
     --asjp_output_path "${ASJP_OUTPUT_PATH}" \

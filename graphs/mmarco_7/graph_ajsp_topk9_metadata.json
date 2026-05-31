@@ -1,8 +1,8 @@
 {
-  "graph_name": "lang2vec",
-  "selection_type": "threshold",
-  "selection_value": 0.45,
-  "label": "0.45",
+  "graph_name": "ajsp",
+  "selection_type": "top_k",
+  "selection_value": 9,
+  "label": "topk9",
   "language_codes": [
     "en",
     "fr",
@@ -22,33 +22,35 @@
     "Dutch"
   ],
   "sign_mode": "legacy",
-  "source": "resources/lang2vec/syntactic_distances.csv",
-  "threshold": 0.45,
-  "edge_count": 7,
-  "density": 0.3333333333333333,
+  "source": "resources/asjp/output.txt",
+  "top_k": 9,
+  "edge_count": 9,
+  "density": 0.42857142857142855,
   "degrees": {
     "en": 2,
-    "fr": 1,
+    "fr": 3,
     "de": 2,
-    "it": 2,
-    "pt": 2,
+    "it": 3,
+    "pt": 3,
     "es": 3,
     "nl": 2
   },
-  "degree_min": 1,
+  "degree_min": 2,
   "degree_max": 3,
-  "degree_mean": 2.0,
-  "num_components": 1,
-  "is_connected": true,
+  "degree_mean": 2.5714285714285716,
+  "num_components": 2,
+  "is_connected": false,
   "components": [
     [
       "en",
-      "fr",
       "de",
+      "nl"
+    ],
+    [
+      "fr",
       "it",
       "pt",
-      "es",
-      "nl"
+      "es"
     ]
   ]
 }

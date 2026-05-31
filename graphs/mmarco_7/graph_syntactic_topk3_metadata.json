@@ -1,0 +1,60 @@
+{
+  "graph_name": "syntactic",
+  "selection_type": "top_k",
+  "selection_value": 3,
+  "label": "topk3",
+  "language_codes": [
+    "en",
+    "fr",
+    "de",
+    "it",
+    "pt",
+    "es",
+    "nl"
+  ],
+  "language_names": [
+    "English",
+    "French",
+    "German",
+    "Italian",
+    "Portuguese",
+    "Spanish",
+    "Dutch"
+  ],
+  "sign_mode": "legacy",
+  "source": "resources/lang2vec/syntactic_distances.csv",
+  "top_k": 3,
+  "edge_count": 3,
+  "density": 0.14285714285714285,
+  "degrees": {
+    "en": 1,
+    "fr": 0,
+    "de": 1,
+    "it": 1,
+    "pt": 1,
+    "es": 1,
+    "nl": 1
+  },
+  "degree_min": 0,
+  "degree_max": 1,
+  "degree_mean": 0.8571428571428571,
+  "num_components": 4,
+  "is_connected": false,
+  "components": [
+    [
+      "en",
+      "es"
+    ],
+    [
+      "fr"
+    ],
+    [
+      "de",
+      "nl"
+    ],
+    [
+      "it",
+      "pt"
+    ]
+  ]
+}

@@ -12,6 +12,12 @@ import pandas as pd
 DEFAULT_ROOTS = [
     "server_results_json_20260531/outputs/lago_ablation",
     "server_results_json_20260531/outputs/lago_ablation_multilingual_decoder",
+    "server_results_json_20260531/outputs/lago_ablation_connectivity",
+    "server_results_json_20260531/outputs/lago_ablation_multilingual_decoder_connectivity",
+    "outputs/lago_ablation",
+    "outputs/lago_ablation_multilingual_decoder",
+    "outputs/lago_ablation_connectivity",
+    "outputs/lago_ablation_multilingual_decoder_connectivity",
 ]
 
 GENERATION_METRICS = [
@@ -59,7 +65,11 @@ def infer_decoder_setup(path: str) -> str:
     parts = set(path.split(os.sep))
     if "lago_ablation_multilingual_decoder" in parts:
         return "multilingual_decoder"
+    if "lago_ablation_multilingual_decoder_connectivity" in parts:
+        return "multilingual_decoder"
     if "lago_ablation" in parts:
+        return "english_decoder"
+    if "lago_ablation_connectivity" in parts:
         return "english_decoder"
     return "unknown_decoder"
 
@@ -98,12 +108,15 @@ def build_rows(results_path: str) -> tuple[Dict[str, Any], List[Dict[str, Any]]]
     payload = load_json(results_path)
     args = payload.get("args", {})
     condition = parse_condition_from_dir(results_path)
+    stats = payload.get("graph_stats") or {}
 
     base = {
         "decoder_setup": infer_decoder_setup(results_path),
         "decoder_model": payload.get("decoder_model"),
         "source_model_name": args.get("source_model_name"),
-        "graph_type": args.get("graph_type") or condition.get("graph_type"),
+        "graph_type": args.get("graph_label") or condition.get("graph_type") or args.get("graph_type"),
+        "base_graph_type": args.get("graph_type"),
+        "graph_file": args.get("graph_file"),
         "constraint_mode": args.get("constraint_mode") or condition.get("constraint_mode"),
         "align_train_samples": args.get("align_train_samples") or condition.get("align_train_samples"),
         "reg_lambda": args.get("reg_lambda") or condition.get("reg_lambda"),
@@ -111,6 +124,16 @@ def build_rows(results_path: str) -> tuple[Dict[str, Any], List[Dict[str, Any]]]
         "seed": args.get("seed") or condition.get("seed"),
         "results_path": results_path,
     }
+    for key in [
+        "edge_count",
+        "density",
+        "num_components",
+        "is_connected",
+        "degree_min",
+        "degree_max",
+        "degree_mean",
+    ]:
+        base[f"graph_{key}"] = stats.get(key)
 
     macro_row = dict(base)
     macro_row.update(payload.get("macro", {}))
@@ -163,17 +186,36 @@ def compare_against_baselines(macro_df: pd.DataFrame) -> pd.DataFrame:
     metrics = [metric for metric in GENERATION_METRICS + ALIGNMENT_METRICS if metric in macro_df.columns]
     rows = []
 
+    def random_candidates(graph: str) -> List[str]:
+        candidates = [f"random_{graph}", f"random_lang2vec_from_{graph}", f"random_ajsp_from_{graph}"]
+        if graph == "lang2vec":
+            candidates.append("random_lang2vec")
+        elif graph == "ajsp":
+            candidates.append("random_ajsp")
+        elif graph.startswith("lang2vec_"):
+            candidates.append(graph.replace("lang2vec", "random_lang2vec", 1))
+        elif graph.startswith("syntactic_"):
+            candidates.append(graph.replace("syntactic", "random_lang2vec", 1))
+        elif graph.startswith("ajsp_"):
+            candidates.append(graph.replace("ajsp", "random_ajsp", 1))
+        return list(dict.fromkeys(candidates))
+
     for _, group in macro_df.groupby(group_cols, dropna=False):
         by_graph = {row["graph_type"]: row for _, row in group.iterrows()}
         none = by_graph.get("none")
-        pairs = [
-            ("lang2vec_vs_none", "lang2vec", none),
-            ("ajsp_vs_none", "ajsp", none),
-            ("random_lang2vec_vs_none", "random_lang2vec", none),
-            ("random_ajsp_vs_none", "random_ajsp", none),
-            ("lang2vec_vs_random", "lang2vec", by_graph.get("random_lang2vec")),
-            ("ajsp_vs_random", "ajsp", by_graph.get("random_ajsp")),
-        ]
+        pairs = []
+        for graph in sorted(by_graph):
+            if graph == "none":
+                continue
+            if none is not None:
+                pairs.append((f"{graph}_vs_none", graph, none))
+            if graph.startswith("random"):
+                continue
+            for candidate in random_candidates(graph):
+                random_baseline = by_graph.get(candidate)
+                if random_baseline is not None:
+                    pairs.append((f"{graph}_vs_random", graph, random_baseline))
+                    break
         for comparison, graph, baseline in pairs:
             current = by_graph.get(graph)
             if current is None or baseline is None:
@@ -207,6 +249,10 @@ def best_by_group(macro_df: pd.DataFrame) -> pd.DataFrame:
     idx = macro_df.groupby(group_cols, dropna=False)["generation_rougeL"].idxmax()
     cols = group_cols + [
         "graph_type",
+        "base_graph_type",
+        "graph_edge_count",
+        "graph_density",
+        "graph_num_components",
         "constraint_mode",
         "generation_rougeL",
         "generation_rouge1",
@@ -290,6 +336,8 @@ def write_report(
             "source_model_name",
             "align_train_samples",
             "graph_type",
+            "graph_edge_count",
+            "graph_num_components",
             "generation_rougeL",
             "alignment_test_cos",
         ]
@@ -309,6 +357,25 @@ def write_report(
         )
         lines.append(table_text(delta))
         lines.append("")
+
+    if not macro_df.empty and "graph_edge_count" in macro_df.columns:
+        connectivity = macro_df[macro_df["graph_edge_count"].notna()]
+        if not connectivity.empty:
+            lines.append("## Rouge-L by Graph Connectivity")
+            conn_summary = (
+                connectivity.groupby(
+                    ["decoder_setup", "source_model_name", "graph_type", "graph_edge_count"],
+                    dropna=False,
+                )["generation_rougeL"]
+                .mean()
+                .reset_index()
+                .sort_values(
+                    ["decoder_setup", "source_model_name", "graph_edge_count", "graph_type"],
+                    kind="stable",
+                )
+            )
+            lines.append(table_text(conn_summary))
+            lines.append("")
 
     if not decoder_comparison_df.empty and "generation_rougeL_delta" in decoder_comparison_df.columns:
         lines.append("## Multilingual Decoder Gain")

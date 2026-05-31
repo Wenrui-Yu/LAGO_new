@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import csv
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import torch
@@ -139,6 +139,51 @@ def edge_count(graph: torch.Tensor) -> int:
     return int((graph.abs().triu(diagonal=1) > 0).sum().item())
 
 
+def connected_components(graph: torch.Tensor) -> List[List[int]]:
+    adjacency = (graph.abs() > 0).cpu()
+    visited = set()
+    components = []
+    for start in range(adjacency.shape[0]):
+        if start in visited:
+            continue
+        stack = [start]
+        visited.add(start)
+        component = []
+        while stack:
+            node = stack.pop()
+            component.append(node)
+            neighbors = torch.nonzero(adjacency[node], as_tuple=False).view(-1).tolist()
+            for neighbor in neighbors:
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    stack.append(neighbor)
+        components.append(sorted(component))
+    return components
+
+
+def graph_stats(graph: Optional[torch.Tensor]) -> Optional[Dict[str, Any]]:
+    if graph is None:
+        return None
+    adjacency = (graph.abs() > 0).cpu()
+    num_nodes = int(adjacency.shape[0])
+    possible_edges = num_nodes * (num_nodes - 1) / 2
+    edges = edge_count(graph)
+    degrees = adjacency.sum(dim=1).to(torch.int64).tolist()
+    components = connected_components(graph)
+    return {
+        "num_nodes": num_nodes,
+        "edge_count": edges,
+        "density": 0.0 if possible_edges == 0 else edges / possible_edges,
+        "degrees": [int(degree) for degree in degrees],
+        "degree_min": int(min(degrees)) if degrees else 0,
+        "degree_max": int(max(degrees)) if degrees else 0,
+        "degree_mean": float(sum(degrees) / len(degrees)) if degrees else 0.0,
+        "num_components": len(components),
+        "is_connected": len(components) == 1,
+        "components": components,
+    }
+
+
 def random_signed_graph(num_nodes: int, num_edges: int, seed: int) -> torch.Tensor:
     generator = torch.Generator()
     generator.manual_seed(seed)
@@ -168,6 +213,13 @@ def build_graph(
         if graph_type in RANDOM_GRAPH_BASES:
             graph_name = RANDOM_GRAPH_BASES[graph_type]
         graph = signed_default_graph(graph_name, lang_keys)
+
+    expected_shape = (len(lang_keys), len(lang_keys))
+    if tuple(graph.shape) != expected_shape:
+        raise ValueError(
+            f"Graph shape {tuple(graph.shape)} does not match {len(lang_keys)} languages. "
+            f"Expected {expected_shape}. graph_file={graph_file}"
+        )
 
     if graph_type in DEFAULT_GRAPHS or graph_type in GRAPH_ALIASES:
         return graph
