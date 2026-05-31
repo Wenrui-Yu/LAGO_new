@@ -17,6 +17,9 @@ server_results_json_*/
 log/*
 !log/.gitkeep
 
+# Local run notes
+LAGO_RUN_MEMO.md
+
 # Large model/vector artifacts
 *.pt
 *.pth

@@ -31,6 +31,7 @@ the same decoder checkpoint:
 
 ```bash
 cd LAGO_new
+sbatch run_cache_text_datasets.sh
 sbatch run_lago_ablation.sh
 ```
 
@@ -162,6 +163,7 @@ sbatch run_lago_multilingual_decoder_ablation.sh
 To test graph connectivity instead of a single fixed topology:
 
 ```bash
+sbatch run_cache_text_datasets.sh
 sbatch run_generate_language_graphs.sh
 sbatch run_lago_connectivity_ablation.sh
 ```
@@ -235,3 +237,6 @@ Each alignment folder contains:
 - Connectivity ablations should use `--graph_label` or
   `run_lago_connectivity_ablation.sh`; otherwise different `--graph_file`
   values with the same `graph_type` can be hard to distinguish.
+- `run_cache_text_datasets.sh` materializes Hugging Face text datasets under
+  `datasets/finetuning_decoder/<dataset_slug>/`. Run it once before large
+  ablations to avoid repeated Hugging Face API calls and rate-limit failures.

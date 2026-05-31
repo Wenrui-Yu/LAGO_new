@@ -14,10 +14,12 @@ SINGULARITY_IMAGE="${SINGULARITY_IMAGE:-../python3.sif}"
 PYTHON_BIN="${PYTHON_BIN:-python3.12}"
 
 DECODER_CHECKPOINT_PATH="${DECODER_CHECKPOINT_PATH:-outputs/decoders/google_mt5-small/yywwrr_mmarco_english_500k_maxlength32_train450000_batch128_lr0.0001_wd0.0001_epochs100}"
+DECODER_MODEL_SLUG="${DECODER_MODEL_SLUG:-google_mt5-small}"
 SOURCE_MODEL_NAME="${SOURCE_MODEL_NAME:-google/mt5-base}"
 OUTPUT_DIR="${OUTPUT_DIR:-outputs/lago_ablation_connectivity}"
 DATASETS="${DATASETS:-yywwrr/mmarco_english,yywwrr/mmarco_french,yywwrr/mmarco_german,yywwrr/mmarco_italian,yywwrr/mmarco_portuguese,yywwrr/mmarco_spanish,yywwrr/mmarco_dutch}"
 LANG_KEYS="${LANG_KEYS:-en,fr,de,it,pt,es,nl}"
+DATA_FOLDER="${DATA_FOLDER:-datasets/finetuning_decoder}"
 
 GRAPH_DIR="${GRAPH_DIR:-graphs/mmarco_7}"
 GRAPH_FILES="${GRAPH_FILES:-}"
@@ -32,6 +34,11 @@ TEST_SAMPLES="${TEST_SAMPLES:-200}"
 REG_LAMBDA="${REG_LAMBDA:-0.01}"
 EPSILON="${EPSILON:-0.01}"
 NUM_ITER="${NUM_ITER:-500}"
+SEED="${SEED:-42}"
+SKIP_EXISTING_RESULTS="${SKIP_EXISTING_RESULTS:-1}"
+RUN_RETRIES="${RUN_RETRIES:-3}"
+RUN_RETRY_SLEEP="${RUN_RETRY_SLEEP:-60}"
+SOURCE_MODEL_SLUG="${SOURCE_MODEL_NAME//\//_}"
 
 if [ -z "${GRAPH_FILES}" ]; then
   DEFAULT_GRAPH_FILES="
@@ -64,14 +71,22 @@ if [ -z "${GRAPH_FILES}" ]; then
 fi
 
 echo "Running LAGO connectivity ablation"
+echo "hostname=$(hostname)"
+echo "uid=$(id -u), gid=$(id -g)"
+getent passwd "$(id -u)" || true
 echo "decoder_checkpoint=${DECODER_CHECKPOINT_PATH}"
+echo "decoder_model_slug=${DECODER_MODEL_SLUG}"
 echo "source_model=${SOURCE_MODEL_NAME}"
 echo "output_dir=${OUTPUT_DIR}"
+echo "data_folder=${DATA_FOLDER}"
 echo "graph_files=${GRAPH_FILES}"
 echo "include_none=${INCLUDE_NONE}"
 echo "include_real=${INCLUDE_REAL}"
 echo "include_random=${INCLUDE_RANDOM}"
 echo "align_train_samples=${ALIGN_TRAIN_SAMPLES}"
+echo "seed=${SEED}"
+echo "skip_existing_results=${SKIP_EXISTING_RESULTS}"
+echo "run_retries=${RUN_RETRIES}"
 
 infer_graph_type() {
   local label="$1"
@@ -93,20 +108,51 @@ infer_random_graph_type() {
   fi
 }
 
+result_json_path() {
+  local graph_label="$1"
+  local mode="$2"
+  local train_n="$3"
+  echo "${OUTPUT_DIR}/${DECODER_MODEL_SLUG}/${SOURCE_MODEL_SLUG}/${graph_label}_${mode}_train${train_n}_ridge${REG_LAMBDA}_eps${EPSILON}_seed${SEED}/results.json"
+}
+
+run_with_retry() {
+  local attempt=1
+  local status=0
+  while true; do
+    "$@" && return 0
+    status=$?
+    if [ "${attempt}" -ge "${RUN_RETRIES}" ]; then
+      return "${status}"
+    fi
+    local delay=$((RUN_RETRY_SLEEP * attempt))
+    echo "Command failed with status ${status}; retrying in ${delay}s (${attempt}/${RUN_RETRIES})"
+    sleep "${delay}"
+    attempt=$((attempt + 1))
+  done
+}
+
 run_condition() {
   local train_n="$1"
   local graph_type="$2"
   local graph_label="$3"
   local mode="$4"
   local graph_file="${5:-}"
+  local results_json
+  results_json="$(result_json_path "${graph_label}" "${mode}" "${train_n}")"
+
+  if [ "${SKIP_EXISTING_RESULTS}" = "1" ] && [ -s "${results_json}" ]; then
+    echo "Skipping existing result: ${results_json}"
+    return 0
+  fi
 
   echo "Starting graph_label=${graph_label}, graph_type=${graph_type}, constraint_mode=${mode}, train_samples=${train_n}"
   if [ -n "${graph_file}" ]; then
-    singularity exec --nv "${SINGULARITY_IMAGE}" "${PYTHON_BIN}" src/run_alignment_ablation.py \
+    run_with_retry singularity exec --nv "${SINGULARITY_IMAGE}" "${PYTHON_BIN}" src/run_alignment_ablation.py \
       --decoder_checkpoint_path "${DECODER_CHECKPOINT_PATH}" \
       --source_model_name "${SOURCE_MODEL_NAME}" \
       --datasets "${DATASETS}" \
       --lang_keys "${LANG_KEYS}" \
+      --data_folder "${DATA_FOLDER}" \
       --output_dir "${OUTPUT_DIR}" \
       --graph_type "${graph_type}" \
       --graph_file "${graph_file}" \
@@ -117,13 +163,15 @@ run_condition() {
       --test_samples "${TEST_SAMPLES}" \
       --reg_lambda "${REG_LAMBDA}" \
       --epsilon "${EPSILON}" \
-      --num_iter "${NUM_ITER}"
+      --num_iter "${NUM_ITER}" \
+      --seed "${SEED}"
   else
-    singularity exec --nv "${SINGULARITY_IMAGE}" "${PYTHON_BIN}" src/run_alignment_ablation.py \
+    run_with_retry singularity exec --nv "${SINGULARITY_IMAGE}" "${PYTHON_BIN}" src/run_alignment_ablation.py \
       --decoder_checkpoint_path "${DECODER_CHECKPOINT_PATH}" \
       --source_model_name "${SOURCE_MODEL_NAME}" \
       --datasets "${DATASETS}" \
       --lang_keys "${LANG_KEYS}" \
+      --data_folder "${DATA_FOLDER}" \
       --output_dir "${OUTPUT_DIR}" \
       --graph_type "${graph_type}" \
       --graph_label "${graph_label}" \
@@ -133,7 +181,8 @@ run_condition() {
       --test_samples "${TEST_SAMPLES}" \
       --reg_lambda "${REG_LAMBDA}" \
       --epsilon "${EPSILON}" \
-      --num_iter "${NUM_ITER}"
+      --num_iter "${NUM_ITER}" \
+      --seed "${SEED}"
   fi
   echo "Finished graph_label=${graph_label}, train_samples=${train_n}"
 }
